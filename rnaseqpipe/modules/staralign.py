@@ -1,16 +1,30 @@
 from modal import App, Secret, Image, build, enter, method
 from typing import List
 
-from config import vol
+from rnaseqpipe.modules.utils import PLID
+from rnaseqpipe.modules.downloader import download_from_azure
+from rnaseqpipe.config import vol
 
 app = App("rnaseq-staraligner")
-aligner_img = Image.debian_slim()
+aligner_img = (
+    Image.debian_slim()
+    .pip_install("azure-storage-blob")
+    .apt_install("wget")
+    .run_commands(
+        "wget https://github.com/alexdobin/STAR/archive/2.7.11b.tar.gz",
+        "tar -xzf 2.7.11b.tar.gz",
+        "cd STAR-2.7.11b",
+    )
+    .run_commands("ls STAR-2.7.11b/bin")
+    .apt_install("tree")
+)
 
 
 @app.cls(
     image=aligner_img,
     volumes={"/data": vol},
     secrets=[Secret.from_name("azure-connect-str")],
+    cpu=8.0,
 )
 class STARAlign:
 
@@ -48,56 +62,39 @@ class STARAlign:
     def enter(self):
         pass
 
-    def align(self, plid: str, read_files: List[str]):
+    @method()
+    def align(self, plid: PLID, read_files: List[str]):
         import subprocess  # Ensure this import is added to the module where this class and method are defined.
 
         assert len(read_files) in (1, 2), "Only 1 or 2 read files supported."
 
-        print("Downloading files from Azure...")
-
-        # Download the read files from Azure
-        import os
-        from azure.storage.blob import BlobServiceClient
-
-        connect_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-        # Get the client for the container
-        blob_service_client = BlobServiceClient.from_connection_string(connect_str)
-
-        # Name of the container
-        container_name = "rna-seq-reads"
-        # Get the client for the container
-        container_client = blob_service_client.get_container_client(container_name)
-
-        # Download the blob(s)
-        for file in read_files:
-            blob_client = container_client.get_blob_client(file)
-            with open(file, "wb") as f:
-                f.write(blob_client.download_blob().readall())
-
         print("Aligning reads...")
         threads = 8
-        genome_idx_dir = "genome-index"
+        genome_idx_dir = "genome-index/genome-index"
+
+        import os
+
+        print(os.listdir("genome-index"))
 
         # Construct the basic command for STAR alignment
         if len(read_files) == 2:  # Paired-end reads
-            read_files_cmd = f"{read_files[0]} {read_files[1]}"
+            read_files_cmd = f"{read_files[0]},{read_files[1]}"
         else:  # Single-end reads
             read_files_cmd = f"{read_files[0]}"
 
         cmd = [
-            "STAR",
+            "/STAR-2.7.11b/bin/Linux_x86_64_static/STAR",
             "--runThreadN",
             str(threads),
             "--genomeDir",
             genome_idx_dir,
             "--readFilesIn",
             read_files_cmd,
-            "--outFileNamePrefix",
-            "output_prefix",
             "--outWigType",
             "wiggle",
             "--outSAMtype",
-            "BAM SortedByCoordinate",
+            "BAM",
+            "SortedByCoordinate",
             "--limitBAMsortRAM",
             "1174874044",
         ]
@@ -105,7 +102,42 @@ class STARAlign:
         try:
             # Execute the command using subprocess
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+            vol.commit()
+
             print(f"Succeeded: {result.stdout}")
         except subprocess.CalledProcessError as e:
             print(f"Failed to align reads: {e.stderr}")
             raise
+
+
+@app.local_entrypoint()
+def run():
+    from pathlib import Path
+    import modal
+
+    plid = PLID("pl-9e233179-57c0-43fb-b514-1f98745ceacb")
+    read_dir = Path("reads")
+
+    """
+    plid: PLID, container_name: str, blob_name: str, dest: Path
+    """
+
+    downloader = modal.Function.lookup("rnaseq-downloader", "download_from_azure")
+
+    downloader.remote(
+        plid=plid,
+        container_name="rna-seq-reads",
+        blob_name="DRR023796.fastq",
+        dest_dir=read_dir,
+    )
+
+    print("read dir: ", read_dir)
+
+    star = STARAlign()
+
+    star.align.remote(
+        plid, [Path(f"/data/{plid}") / read_dir / Path("DRR023796.fastq")]
+    )
+
+    pass
