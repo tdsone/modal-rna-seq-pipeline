@@ -1,3 +1,4 @@
 tasks/
 data/
 rnaseqpipe/rnaseqpipe.egg-info/
+.vscode/settings.json
