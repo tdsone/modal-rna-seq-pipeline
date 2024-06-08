@@ -9,29 +9,28 @@ from rnaseqpipe.config import vol, salmon_image
 
 app = App("salmon-index")
 
+salmon_image = salmon_image.run_commands(
+    "chmod +x /salmon-latest_linux_x86_64/bin/salmon"
+)
+
 
 @app.function(image=salmon_image, volumes={"/data": vol})
 def make_salmon_index(assembly_name: str, transcriptome: str):
     import subprocess
     import os
 
-    salmon_index_dir = f"/data/salmon_index/{assembly_name}"
+    salmon_index_dir = f"/data/salmon_index/{assembly_name}/decoy"
     os.makedirs(salmon_index_dir, exist_ok=True)
 
-    # Download the transcriptome
-    cmd = ["wget", "-O", f"{salmon_index_dir}/transcripts.fa.gz", transcriptome]
-    # Unzip the transcriptome
-    cmd = ["gunzip", f"{salmon_index_dir}/transcripts.fa.gz"]
-
     cmd = [
-        "./bin/salmon",
+        "/salmon-latest_linux_x86_64/bin/salmon",
         "index",
         "-t",
-        f"{salmon_index_dir}/transcripts.fa",
+        f"{salmon_index_dir}/gentrome.fa",
         "-i",
         "transcripts_index",
         "--decoys",
-        "decoys.txt",
+        f"{salmon_index_dir}/decoys.txt",
         "-k",
         "31",
     ]
