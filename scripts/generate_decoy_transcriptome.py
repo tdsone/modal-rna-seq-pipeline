@@ -34,8 +34,6 @@ def generate_decoy_transcriptome(assembly_name: str = "R64-1-1"):
     for file in os.listdir(salmon_index_dir):
         os.remove(f"{salmon_index_dir}/{file}")
 
-    print(os.listdir("/"))
-
     # Run the script to generate the decoy transcriptome
 
     subprocess.run(
