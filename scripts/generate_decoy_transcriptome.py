@@ -19,6 +19,11 @@ image = (
 
 @app.function(image=image, volumes={"/data": vol})
 def generate_decoy_transcriptome(assembly_name: str = "R64-1-1"):
+    """
+    Follows the implementation from here: https://combine-lab.github.io/alevin-tutorial/2019/selective-alignment/
+    using the files I downloaded from Ensemble and uploaded to here: https://zenodo.org/records/11550687
+    """
+
     import os
     import subprocess
 
