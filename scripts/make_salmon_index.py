@@ -26,7 +26,7 @@ def make_salmon_index(assembly_name: str, transcriptome: str):
         "/salmon-latest_linux_x86_64/bin/salmon",
         "index",
         "-t",
-        f"{salmon_index_dir}/gentrome.fa",
+        f"{salmon_index_dir}/gentrome.fa.gz",
         "-i",
         "transcripts_index",
         "--decoys",
