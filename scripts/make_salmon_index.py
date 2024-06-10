@@ -19,24 +19,25 @@ def make_salmon_index(assembly_name: str, transcriptome: str):
     import subprocess
     import os
 
-    salmon_index_dir = f"/data/salmon_index/{assembly_name}/decoy"
+    salmon_index_dir = f"/data/salmon_index/{assembly_name}"
     os.makedirs(salmon_index_dir, exist_ok=True)
 
     cmd = [
         "/salmon-latest_linux_x86_64/bin/salmon",
         "index",
         "-t",
-        f"{salmon_index_dir}/gentrome.fa.gz",
+        f"{salmon_index_dir}/decoy/gentrome.fa.gz",
         "-i",
-        "transcripts_index",
+        f"{salmon_index_dir}/transcripts_index",
         "--decoys",
-        f"{salmon_index_dir}/decoys.txt",
+        f"{salmon_index_dir}/decoy/decoys.txt",
         "-k",
         "31",
     ]
 
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        vol.commit()
         print(f"Succeeded: {result.stdout}")
     except subprocess.CalledProcessError as e:
         print(f"Failed to run Salmon index: {e.stderr}")
