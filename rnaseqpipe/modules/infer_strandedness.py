@@ -21,65 +21,75 @@ from rnaseqpipe.modules.utils import PLID
 
 app = App("rnaseq-strandedness")
 
-CPUS = 8.0
+CPUS = 8
 
 
 @app.function(image=salmon_image, volumes={"/data": vol}, cpu=CPUS)
-def infer_strandedness(plid: PLID, read_files: List[str]):
-    # Run salmon to infer strandedness using subprocess for command execution
+def infer_strandedness(plid: PLID, read_files: List[str], assembly_name: str):
+    """
+    Run salmon to infer strandedness
+    - can be infered from produced lib_format_counts.json
+
+    Library type meaning is explained here:
+    - https://salmon.readthedocs.io/en/latest/library_type.html
+    """
+
     import subprocess
     import os
 
-    # Assert that the index file is available
+    # Subsample reads before mapping to be faster
 
     # Ensure the result directory exists
     result_path = f"/data/{plid}/strandedness/"
+
     os.makedirs(result_path, exist_ok=True)
 
     # Construct command for Salmon quantification
 
     """
-    From nf: 
 
-    salmon quant \\
-    --geneMap $gtf \\
-    --threads $task.cpus \\
-    --libType=$strandedness \\
-    $reference \\
-    $input_reads \\
-    $args \\
-    -o $prefix
-
-    
-    ./bin/salmon quant -i transcripts_index -l <LIBTYPE> -1 reads1.fq -2 reads2.fq --validateMappings -o transcripts_quant
-    ./bin/salmon quant -i transcripts_index -l <LIBTYPE> -r reads.fq --validateMappings -o transcripts_quant
     """
 
-    gtf_path = None
-    reference = None
-    input_reads = None
-    args = None  # TODO what args?
     prefix = result_path  # TODO: does it work this way?
 
-    salmon_cmd = [
-        "/salmon-latest_linux_x86_64/bin/salmon",
-        "quant",
-        "--geneMap",
-        gtf_path,
-        "--threads",
-        CPUS,
-        "--libType",
-        "A",  # stands for "auto"
-        reference,
-        input_reads,
-        args,
-        "-o",
-        prefix,
-    ]
+    read_files = (
+        [
+            "-r",
+            read_files[0],
+        ]
+        if len(read_files) == 1
+        else [
+            "-1",
+            read_files[0],
+            "-2",
+            read_files[1],
+        ]
+    )
+
+    salmon_cmd = (
+        [
+            "/salmon-latest_linux_x86_64/bin/salmon",
+            "quant",
+            "-i",
+            f"/data/salmon_index/{assembly_name}/transcripts_index",
+            "--libType",
+            "A",  # stands for "auto"
+            "--threads",
+            str(CPUS),
+        ]
+        + read_files
+        + [
+            "--validateMappings",
+            "-o",
+            prefix,
+        ]
+    )
 
     # Execute the constructed command
     process = subprocess.Popen(
-        salmon_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        salmon_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
     stdout, stderr = process.communicate()
 
@@ -100,6 +110,8 @@ def run():
 
     plid = PLID("pl-9e233179-57c0-43fb-b514-1f98745ceacb")
 
-    res = infer_strandedness.remote(plid, ["file1", "file2"])
+    res = infer_strandedness.remote(
+        plid, [f"/data/{plid}/reads/DRR023796.fastq"], "R64-1-1"
+    )
 
     pass
