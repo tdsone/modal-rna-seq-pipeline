@@ -23,16 +23,6 @@ app = App("rnaseq-strandedness")
 
 CPUS = 8
 
-# image = (
-#     salmon_image.run_commands("apt-cache madison libc6")
-#     .apt_install("wget", "tar", "libc6")
-#     .run_commands("cat /etc/os-release")
-#     .run_commands(
-#         "wget https://github.com/stjude-rust-labs/fq/releases/download/v0.11.0/fq-0.11.0-x86_64-unknown-linux-gnu.tar.gz"
-#     )
-#     .run_commands("tar -xvf fq-0.11.0-x86_64-unknown-linux-gnu.tar.gz")
-# )
-
 image = (
     Image.from_dockerfile("rnaseqpipe/modules/infer_strandedness/Dockerfile")
     .apt_install("wget", "tar", "libc6")
@@ -40,6 +30,10 @@ image = (
         "wget https://github.com/stjude-rust-labs/fq/releases/download/v0.11.0/fq-0.11.0-x86_64-unknown-linux-gnu.tar.gz"
     )
     .run_commands("tar -xvf fq-0.11.0-x86_64-unknown-linux-gnu.tar.gz")
+    .run_commands(
+        "wget https://github.com/COMBINE-lab/salmon/releases/download/v1.10.0/salmon-1.10.0_linux_x86_64.tar.gz"
+    )
+    .run_commands("tar -xzf salmon-1.10.0_linux_x86_64.tar.gz")
 )
 
 
@@ -59,32 +53,25 @@ def infer_strandedness(plid: PLID, read_files: List[str], assembly_name: str):
     # Create the directory for subsampled reads
     subsampled_path = f"/data/{plid}/reads/subsampled"
     os.makedirs(subsampled_path, exist_ok=True)
-    subsample_cmds = []
-    subsampled_files = []
 
-    # Generate subsample command for each file (handling both single and paired-end reads)
-    for i, file_path in enumerate(read_files):
-        print(f"Processing file: {file_path}")
-        subsampled_file = (
-            f"{subsampled_path}/{os.path.basename(file_path[i])}_subsampled.fastq"
-        )
-        subsampled_files.append(subsampled_file)
-        cmd = [
-            "/fq-0.11.0-x86_64-unknown-linux-gnu/fq",
-            "subsample",
-            "-n",
-            "10000",
-            file_path,
-            subsampled_file,
-        ]
-        subsample_cmds.append(cmd)
+    subsampled_files = [
+        os.path.join(subsampled_path, os.path.basename(f)) for f in read_files
+    ]
 
-    # Run subsample commands
-    for cmd in subsample_cmds:
-        subprocess.run(cmd, check=True)
+    subsample_cmd = f"""/fq-0.11.0-x86_64-unknown-linux-gnu/fq subsample {' '.join(read_files)} \
+        --record-count 10000 \
+        --r1-dst {subsampled_files[0]} {f'--r2-dst {subsampled_files[1]}' if len(read_files) == 2 else ''}"""
+
+    print(f"Subsampling reads: \n\t{subsample_cmd}")
+
+    subprocess.run(subsample_cmd, check=True, shell=True)
+
+    vol.commit()
 
     result_path = f"/data/{plid}/strandedness/"
     os.makedirs(result_path, exist_ok=True)
+
+    vol.commit()
 
     # Configure salmon command based on the number of input files (single vs. paired)
     if len(read_files) == 1:
