@@ -1,0 +1,143 @@
+"""
+Infers the strandedness of the reads to determine, if the reads can be mapped to the correct strand.
+
+This is done in two steps:
+1. Subsample X% of the reads from the fastq file to reduce computation time.
+2. Run salmon to infer the strandedness of the reads.
+
+Step 1: Subsample reads to reduce compute
+
+Step 2: Run Salmon to infer strandedness
+
+Open Question
+1. What to do with multiple files? E.g. paired RNA-seq
+"""
+
+from modal import App, Image, Secret, method, build, enter, Cls, Volume
+from typing import List
+
+from rnaseqpipe.config import vol, salmon_image
+from rnaseqpipe.modules.utils import PLID
+
+app = App("rnaseq-strandedness")
+
+CPUS = 8
+
+# image = (
+#     salmon_image.run_commands("apt-cache madison libc6")
+#     .apt_install("wget", "tar", "libc6")
+#     .run_commands("cat /etc/os-release")
+#     .run_commands(
+#         "wget https://github.com/stjude-rust-labs/fq/releases/download/v0.11.0/fq-0.11.0-x86_64-unknown-linux-gnu.tar.gz"
+#     )
+#     .run_commands("tar -xvf fq-0.11.0-x86_64-unknown-linux-gnu.tar.gz")
+# )
+
+image = (
+    Image.from_dockerfile("rnaseqpipe/modules/infer_strandedness/Dockerfile")
+    .apt_install("wget", "tar", "libc6")
+    .run_commands(
+        "wget https://github.com/stjude-rust-labs/fq/releases/download/v0.11.0/fq-0.11.0-x86_64-unknown-linux-gnu.tar.gz"
+    )
+    .run_commands("tar -xvf fq-0.11.0-x86_64-unknown-linux-gnu.tar.gz")
+)
+
+
+@app.function(image=image, volumes={"/data": vol}, cpu=CPUS)
+def infer_strandedness(plid: PLID, read_files: List[str], assembly_name: str):
+    """
+    Run salmon to infer strandedness
+    - can be infered from produced lib_format_counts.json
+
+    Library type meaning is explained here:
+    - https://salmon.readthedocs.io/en/latest/library_type.html
+    """
+
+    import subprocess
+    import os
+
+    # Create the directory for subsampled reads
+    subsampled_path = f"/data/{plid}/reads/subsampled"
+    os.makedirs(subsampled_path, exist_ok=True)
+    subsample_cmds = []
+    subsampled_files = []
+
+    # Generate subsample command for each file (handling both single and paired-end reads)
+    for i, file_path in enumerate(read_files):
+        print(f"Processing file: {file_path}")
+        subsampled_file = (
+            f"{subsampled_path}/{os.path.basename(file_path[i])}_subsampled.fastq"
+        )
+        subsampled_files.append(subsampled_file)
+        cmd = [
+            "/fq-0.11.0-x86_64-unknown-linux-gnu/fq",
+            "subsample",
+            "-n",
+            "10000",
+            file_path,
+            subsampled_file,
+        ]
+        subsample_cmds.append(cmd)
+
+    # Run subsample commands
+    for cmd in subsample_cmds:
+        subprocess.run(cmd, check=True)
+
+    result_path = f"/data/{plid}/strandedness/"
+    os.makedirs(result_path, exist_ok=True)
+
+    # Configure salmon command based on the number of input files (single vs. paired)
+    if len(read_files) == 1:
+        salmon_lib_spec = ["-r", subsampled_files[0]]
+    elif len(read_files) == 2:
+        salmon_lib_spec = ["-1", subsampled_files[0], "-2", subsampled_files[1]]
+    else:
+        raise ValueError("Unsupported number of read files. Expected 1 or 2.")
+
+    prefix = result_path  # Output directory for Salmon
+
+    salmon_cmd = (
+        [
+            "/salmon-latest_linux_x86_64/bin/salmon",
+            "quant",
+            "-i",
+            f"/data/salmon_index/{assembly_name}/transcripts_index",
+            "--libType",
+            "A",  # 'Auto' determining of library type
+            "--threads",
+            str(CPUS),
+        ]
+        + salmon_lib_spec
+        + ["--validateMappings", "-o", prefix, prefix]
+    )
+
+    # Execute Salmon quantification
+    process = subprocess.Popen(
+        salmon_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    stdout, stderr = process.communicate()
+
+    # Check for errors
+    if process.returncode != 0:
+        raise Exception(f"Salmon quantification failed: {stderr.decode('utf-8')}")
+
+    print(f"Output of salmon quant: {stdout.decode('utf-8')}")
+
+    # Return path to results for further processing
+    return result_path
+
+
+@app.local_entrypoint()
+def run():
+    from rnaseqpipe.modules.utils import PLID
+    from pathlib import Path
+
+    plid = PLID("pl-9e233179-57c0-43fb-b514-1f98745ceacb")
+
+    res = infer_strandedness.remote(
+        plid, [f"/data/{plid}/reads/DRR023796.fastq"], "R64-1-1"
+    )
+
+    pass
