@@ -21,5 +21,3 @@ def fastqc_img(img: Image) -> Image:
             "unzip fastqc_v0.12.1.zip",
         )
     )
-
-def cita
