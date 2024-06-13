@@ -29,6 +29,7 @@ def fastqc(plid: str, read_files: List[str]):
     """
 
     print(f"{plid}:rnaseq-fastqc:fastqc: Running FastQC!")
+    vol.reload()
 
     import subprocess
     import os

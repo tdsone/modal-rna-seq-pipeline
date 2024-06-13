@@ -28,6 +28,8 @@ def trimgalore(plid: str, read_files: List[str]):
 
     assert len(read_files) in [1, 2], "TrimGalore!: Invalid number of read files"
 
+    vol.reload()
+
     trimgalore_cmd = f"""/TrimGalore-0.6.10/trim_galore {' '.join(map(str, read_files))} \
         --cores {int(CPUS)} \
         --gzip {"--paired" if len(read_files) == 2 else ''}"""
