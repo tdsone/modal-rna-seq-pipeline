@@ -54,6 +54,8 @@ def fastqc(plid: str, read_files: List[str]):
         print(f"Failed to run FastQC: {e.stderr}")
         raise e
 
+    return True
+
 
 @app.local_entrypoint()
 def run():
