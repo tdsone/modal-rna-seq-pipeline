@@ -23,7 +23,7 @@ pipeline_img = Image.debian_slim().pip_install("azure-storage-blob", "tqdm")
     volumes={"/data": vol},
     secrets=[Secret.from_name("azure-connect-str")],
 )
-def run_pipeline(sample_id: Tuple[str, List[str]]):
+def run_pipeline(sample_id: Tuple[str, List[str]], no_cache: bool = False):
     """
     Example Input:
         sample_id example paired: ("DRR023784", ["DRR023784_1.fastq.gz", "DRR023784_2.fastq.gz"])
@@ -52,18 +52,32 @@ def run_pipeline(sample_id: Tuple[str, List[str]]):
     # Download the blob(s)
     import os
 
-    print(f"{plid}: Downloading files...")
+    print(f"\n{plid}: Downloading files...")
 
     os.makedirs(f"/data/{plid}/reads", exist_ok=True)
     for file in sample_id[1]:
-        if not os.path.exists(f"/data/{plid}/reads/{file}"):
+        file_empty = False
+        if os.path.exists(f"/data/{plid}/reads/{file}"):
+            file_empty = os.stat(f"/data/{plid}/reads/{file}").st_size == 0
+            print(
+                "file size:",
+                os.stat(f"/data/{plid}/reads/{file}").st_size,
+                "; file_empty:",
+                file_empty,
+            )
+
+        if not os.path.exists(f"/data/{plid}/reads/{file}") or no_cache or file_empty:
+            if os.path.exists(f"/data/{plid}/reads/{file}") and file_empty:
+                os.remove(f"/data/{plid}/reads/{file}")
+
             blob_client = container_client.get_blob_client(file)
+            print(f"Downloading {file}...")
             with open(f"/data/{plid}/reads/{file}", "wb") as f:
                 f.write(blob_client.download_blob().readall())
+                vol.commit()
+
         else:
             print(f"File {file} already exists. Skipping download.")
-
-    vol.commit()
 
     print(f"{plid}: Files downloaded successfully!")
 
@@ -74,25 +88,24 @@ def run_pipeline(sample_id: Tuple[str, List[str]]):
     - Read Trimming: Trim Galore!
     """
 
-    import subprocess
-    from concurrent.futures import ProcessPoolExecutor
+    vol.reload()
 
     fastqc = Function.lookup("rnaseq-fastqc", "fastqc")
     infer_strandedness = Function.lookup("rnaseq-strandedness", "infer_strandedness")
     trimgalore = Function.lookup("rnaseq-trimgalore", "trimgalore")
 
     fastqc_id = fastqc.spawn(
-        plid=plid, read_files=[f"data/{plid}/reads/{name}" for name in sample_id[1]]
+        plid=plid, read_files=[f"/data/{plid}/reads/{name}" for name in sample_id[1]]
     )
 
     infer_strandedness_id = infer_strandedness.spawn(
         plid=plid,
-        read_files=[f"data/{plid}/reads/{read_file}" for read_file in sample_id[1]],
+        read_files=[f"/data/{plid}/reads/{read_file}" for read_file in sample_id[1]],
         assembly_name="R64-1-1",
     )
 
     trimgalore_id = trimgalore.spawn(
-        plid=plid, read_files=[f"data/{plid}/reads/{name}" for name in sample_id[1]]
+        plid=plid, read_files=[f"/data/{plid}/reads/{name}" for name in sample_id[1]]
     )
 
     import time
@@ -109,29 +122,33 @@ def run_pipeline(sample_id: Tuple[str, List[str]]):
             result_fqc = fastqc_id.get(timeout=10)
             result_inf_str = infer_strandedness_id.get(timeout=10)
             result_trimg = trimgalore_id.get(timeout=10)
+
+            if results["fastqc"] == "running" and type(result_fqc) == bool:
+                print("FastQC completed successfully!")
+                results["fastqc"] = "completed"
+
+            if (
+                results["infer_strandedness"] == "running"
+                and type(result_inf_str) == bool
+            ):
+                print("Infer Strandedness completed successfully!")
+                results["infer_strandedness"] = "completed"
+
+            if results["trimgalore"] == "running" and type(result_trimg) == bool:
+                print("Trim Galore! completed successfully!")
+                results["trimgalore"] = "completed"
+
+            if all([v == "completed" for v in results.values()]):
+                print("breaking out...")
+                break
+
         except TimeoutError as e:
             print(e)
 
-        if type(result_fqc) == bool:
-            print("FastQC completed successfully!")
-            results["fastqc"] = "completed"
-            if all([results[key] == "completed" for key in results.keys()]):
-                break
-
-        if type(result_inf_str) == bool:
-            print("Infer Strandedness completed successfully!")
-            results["infer_strandedness"] = "completed"
-            if all([results[key] == "completed" for key in results.keys()]):
-                break
-
-        if type(result_trimg) == bool:
-            print("Trim Galore! completed successfully!")
-            results["trimgalore"] = "completed"
-            if all([results[key] == "completed" for key in results.keys()]):
-                break
-
         print("Going to sleep...")
         time.sleep(3)
+
+    print("Pipeline completed successfully!")
 
     # Kill all spawned functions
     fastqc_id.cancel()
