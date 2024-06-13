@@ -8,7 +8,7 @@ from typing import List
 from rnaseqpipe.modules.utils import PLID
 from rnaseqpipe.config import vol, fastqc_img
 
-app = App("rnaseq-trimgalore")
+app = App("rnaseq-trim-galore")
 
 CPUS = 8.0
 
@@ -32,7 +32,10 @@ def trimgalore(plid: str, read_files: List[str]):
 
     trimgalore_cmd = f"""/TrimGalore-0.6.10/trim_galore {' '.join(map(str, read_files))} \
         --cores {int(CPUS)} \
-        --gzip {"--paired" if len(read_files) == 2 else ''}"""
+        --gzip {"--paired" if len(read_files) == 2 else ''} \
+        --fastqc \
+        -o /data/{plid}/trimgalore \
+        """
 
     print(f"Running TrimGalore: \n\t{trimgalore_cmd}")
 
