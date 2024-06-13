@@ -28,6 +28,8 @@ def fastqc(plid: str, read_files: List[str]):
         read_files (List[str]): list of read files (2 max for paired reads)
     """
 
+    print(f"{plid}:rnaseq-fastqc:fastqc: Running FastQC!")
+
     import subprocess
     import os
 
