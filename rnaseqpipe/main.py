@@ -59,19 +59,13 @@ def run_pipeline(sample_id: Tuple[str, List[str]], no_cache: bool = False):
         file_empty = False
         if os.path.exists(f"/data/{plid}/reads/{file}"):
             file_empty = os.stat(f"/data/{plid}/reads/{file}").st_size == 0
-            print(
-                "file size:",
-                os.stat(f"/data/{plid}/reads/{file}").st_size,
-                "; file_empty:",
-                file_empty,
-            )
 
         if not os.path.exists(f"/data/{plid}/reads/{file}") or no_cache or file_empty:
             if os.path.exists(f"/data/{plid}/reads/{file}") and file_empty:
                 os.remove(f"/data/{plid}/reads/{file}")
 
             blob_client = container_client.get_blob_client(file)
-            print(f"Downloading {file}...")
+            print(f"{plid}: Downloading {file}...")
             with open(f"/data/{plid}/reads/{file}", "wb") as f:
                 f.write(blob_client.download_blob().readall())
                 vol.commit()
@@ -90,70 +84,88 @@ def run_pipeline(sample_id: Tuple[str, List[str]], no_cache: bool = False):
 
     vol.reload()
 
-    fastqc = Function.lookup("rnaseq-fastqc", "fastqc")
-    infer_strandedness = Function.lookup("rnaseq-strandedness", "infer_strandedness")
-    trimgalore = Function.lookup("rnaseq-trimgalore", "trimgalore")
+    FASTQC = "fastqc"
+    INFER_STRANDEDNESS = "infer_strandedness"
+    TRIM_GALORE = "trimgalore"
 
-    fastqc_id = fastqc.spawn(
+    fastqc = Function.lookup("rnaseq-fastqc", FASTQC)
+    infer_strandedness = Function.lookup("rnaseq-strandedness", INFER_STRANDEDNESS)
+    trimgalore = Function.lookup("rnaseq-trimgalore", TRIM_GALORE)
+
+    fastqc_handle = fastqc.spawn(
         plid=plid, read_files=[f"/data/{plid}/reads/{name}" for name in sample_id[1]]
     )
 
-    infer_strandedness_id = infer_strandedness.spawn(
+    infer_strandedness_handle = infer_strandedness.spawn(
         plid=plid,
         read_files=[f"/data/{plid}/reads/{read_file}" for read_file in sample_id[1]],
         assembly_name="R64-1-1",
     )
 
-    trimgalore_id = trimgalore.spawn(
+    trimgalore_handle = trimgalore.spawn(
         plid=plid, read_files=[f"/data/{plid}/reads/{name}" for name in sample_id[1]]
     )
 
     import time
 
     results = {
-        "fastqc": "running",
-        "infer_strandedness": "running",
-        "trimgalore": "running",
+        FASTQC: "running",
+        INFER_STRANDEDNESS: "running",
+        TRIM_GALORE: "running",
     }
 
     while True:
-        print(f"Polling...")
+        print(
+            f"{plid}: Waiting for {FASTQC}, {INFER_STRANDEDNESS} and {TRIM_GALORE} to finish..."
+        )
         try:
-            result_fqc = fastqc_id.get(timeout=10)
-            result_inf_str = infer_strandedness_id.get(timeout=10)
-            result_trimg = trimgalore_id.get(timeout=10)
+            result_fqc = fastqc_handle.get(timeout=10)
+            result_inf_str = infer_strandedness_handle.get(timeout=10)
+            result_trimg = trimgalore_handle.get(timeout=10)
 
-            if results["fastqc"] == "running" and type(result_fqc) == bool:
-                print("FastQC completed successfully!")
-                results["fastqc"] = "completed"
+            if results[FASTQC] == "running" and type(result_fqc) == bool:
+                print(f"{plid}:{FASTQC}: Completed successfully!")
+                results[FASTQC] = "completed"
 
             if (
-                results["infer_strandedness"] == "running"
+                results[INFER_STRANDEDNESS] == "running"
                 and type(result_inf_str) == bool
             ):
-                print("Infer Strandedness completed successfully!")
-                results["infer_strandedness"] = "completed"
+                print(f"{plid}:{INFER_STRANDEDNESS}: Completed successfully!")
+                results[INFER_STRANDEDNESS] = "completed"
 
-            if results["trimgalore"] == "running" and type(result_trimg) == bool:
-                print("Trim Galore! completed successfully!")
-                results["trimgalore"] = "completed"
+            if results[TRIM_GALORE] == "running" and type(result_trimg) == bool:
+                print(f"{plid}:{TRIM_GALORE}: Completed successfully!")
+                results[TRIM_GALORE] = "completed"
 
             if all([v == "completed" for v in results.values()]):
-                print("breaking out...")
                 break
 
         except TimeoutError as e:
             print(e)
-
-        print("Going to sleep...")
         time.sleep(3)
 
-    print("Pipeline completed successfully!")
+    # Run the alignment
+    STARAlign = Cls.lookup("rnaseq-staralign", "STARAlign")
 
-    # Kill all spawned functions
-    fastqc_id.cancel()
-    infer_strandedness_id.cancel()
-    trimgalore_id.cancel()
+    print(f"{plid}: Spawned STARAlign...")
+
+    align_handle = STARAlign().align.spawn(
+        plid=plid,
+        read_files=[
+            f"/data/{plid}/trimgalore/{name.split('.')[0]}_trimmed.{'.'.join(name.split('.')[1:])}"
+            for name in sample_id[1]
+        ],
+    )
+
+    while True:
+        result_staralign = align_handle.get(timeout=10)
+
+        if type(result_staralign) == bool:
+            print(f"{plid}: STARAlign: Completed successfully!")
+            break
+
+    print("Pipeline completed successfully!")
 
 
 distr_img = Image.debian_slim().pip_install("azure-storage-blob")
