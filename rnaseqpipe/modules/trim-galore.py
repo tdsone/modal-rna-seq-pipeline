@@ -24,6 +24,7 @@ trimgalore_img = (
 
 @app.function(cpu=CPUS, volumes={"/data": vol}, image=trimgalore_img)
 def trimgalore(plid: str, read_files: List[str]):
+    print(f"Running TrimGalore! for plid {plid}...")
 
     assert len(read_files) in [1, 2], "TrimGalore!: Invalid number of read files"
 
@@ -41,7 +42,7 @@ def trimgalore(plid: str, read_files: List[str]):
 
     print("TrimGalore completed successfully!")
 
-    return
+    return True
 
 
 @app.local_entrypoint()
