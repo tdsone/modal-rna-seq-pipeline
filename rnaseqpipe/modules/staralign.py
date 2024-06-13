@@ -5,7 +5,7 @@ from rnaseqpipe.modules.utils import PLID
 from rnaseqpipe.modules.downloader import download_from_azure
 from rnaseqpipe.config import vol
 
-app = App("rnaseq-staraligner")
+app = App("rnaseq-staralign")
 aligner_img = (
     Image.debian_slim()
     .pip_install("azure-storage-blob")
@@ -109,6 +109,8 @@ class STARAlign:
         except subprocess.CalledProcessError as e:
             print(f"Failed to align reads: {e.stderr}")
             raise
+
+        return True
 
 
 @app.local_entrypoint()
