@@ -1,4 +1,15 @@
-from modal import App, Image, Secret, method, build, enter, Cls, Volume, Function
+from modal import (
+    App,
+    Image,
+    Secret,
+    method,
+    build,
+    enter,
+    Cls,
+    Volume,
+    Function,
+    functions,
+)
 from typing import Tuple, List
 from config import vol
 
@@ -70,39 +81,62 @@ def run_pipeline(sample_id: Tuple[str, List[str]]):
     infer_strandedness = Function.lookup("rnaseq-strandedness", "infer_strandedness")
     trimgalore = Function.lookup("rnaseq-trimgalore", "trimgalore")
 
-    def run_fastqc():
-        return fastqc.remote(
-            plid=plid, read_files=[f"data/{plid}/reads/{name}" for name in sample_id[1]]
-        )
+    fastqc_id = fastqc.spawn(
+        plid=plid, read_files=[f"data/{plid}/reads/{name}" for name in sample_id[1]]
+    )
 
-    def run_infer_strandedness():
-        return infer_strandedness.remote(
-            plid=plid,
-            read_files=[f"data/{plid}/reads/{read_file}" for read_file in sample_id[1]],
-            assembly_name="R64-1-1",
-        )
+    infer_strandedness_id = infer_strandedness.spawn(
+        plid=plid,
+        read_files=[f"data/{plid}/reads/{read_file}" for read_file in sample_id[1]],
+        assembly_name="R64-1-1",
+    )
 
-    def run_trimgalore():
-        return trimgalore.remote(
-            plid=plid, read_files=[f"data/{plid}/reads/{name}" for name in sample_id[1]]
-        )
+    trimgalore_id = trimgalore.spawn(
+        plid=plid, read_files=[f"data/{plid}/reads/{name}" for name in sample_id[1]]
+    )
 
-    def run_task(task):
+    import time
+
+    results = {
+        "fastqc": "running",
+        "infer_strandedness": "running",
+        "trimgalore": "running",
+    }
+
+    while True:
+        print(f"Polling...")
         try:
-            result = task()
-            return result
-        except Exception as e:
-            return False
+            result_fqc = fastqc_id.get(timeout=10)
+            result_inf_str = infer_strandedness_id.get(timeout=10)
+            result_trimg = trimgalore_id.get(timeout=10)
+        except TimeoutError as e:
+            print(e)
 
-    # List of task functions
-    tasks = [run_fastqc, run_trimgalore, run_infer_strandedness]
+        if type(result_fqc) == bool:
+            print("FastQC completed successfully!")
+            results["fastqc"] = "completed"
+            if all([results[key] == "completed" for key in results.keys()]):
+                break
 
-    # Run the tasks in parallel using subprocesses
-    with ProcessPoolExecutor() as executor:
-        futures = [executor.submit(run_task, task) for task in tasks]
-        results = [future.result() for future in futures]
+        if type(result_inf_str) == bool:
+            print("Infer Strandedness completed successfully!")
+            results["infer_strandedness"] = "completed"
+            if all([results[key] == "completed" for key in results.keys()]):
+                break
 
-    print(f"{plid}: {all(results)} of 3 tasks completed successfully!")
+        if type(result_trimg) == bool:
+            print("Trim Galore! completed successfully!")
+            results["trimgalore"] = "completed"
+            if all([results[key] == "completed" for key in results.keys()]):
+                break
+
+        print("Going to sleep...")
+        time.sleep(3)
+
+    # Kill all spawned functions
+    fastqc_id.cancel()
+    infer_strandedness_id.cancel()
+    trimgalore_id.cancel()
 
 
 distr_img = Image.debian_slim().pip_install("azure-storage-blob")
