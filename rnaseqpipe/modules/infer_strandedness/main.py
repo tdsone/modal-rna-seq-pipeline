@@ -50,6 +50,8 @@ def infer_strandedness(plid: PLID, read_files: List[str], assembly_name: str):
     import subprocess
     import os
 
+    vol.reload()
+
     # Create the directory for subsampled reads
     subsampled_path = f"/data/{plid}/reads/subsampled"
     os.makedirs(subsampled_path, exist_ok=True)
@@ -113,7 +115,7 @@ def infer_strandedness(plid: PLID, read_files: List[str], assembly_name: str):
     print(f"Output of salmon quant: {stdout.decode('utf-8')}")
 
     # Return path to results for further processing
-    return result_path
+    return True
 
 
 @app.local_entrypoint()
