@@ -90,7 +90,7 @@ def run_pipeline(sample_id: Tuple[str, List[str]], no_cache: bool = False):
 
     fastqc = Function.lookup("rnaseq-fastqc", FASTQC)
     infer_strandedness = Function.lookup("rnaseq-strandedness", INFER_STRANDEDNESS)
-    trimgalore = Function.lookup("rnaseq-trimgalore", TRIM_GALORE)
+    trimgalore = Function.lookup("rnaseq-trim-galore", TRIM_GALORE)
 
     fastqc_handle = fastqc.spawn(
         plid=plid, read_files=[f"/data/{plid}/reads/{name}" for name in sample_id[1]]
@@ -153,7 +153,7 @@ def run_pipeline(sample_id: Tuple[str, List[str]], no_cache: bool = False):
     align_handle = STARAlign().align.spawn(
         plid=plid,
         read_files=[
-            f"/data/{plid}/trimgalore/{name.split('.')[0]}_trimmed.{'.'.join(name.split('.')[1:])}"
+            f"/data/{plid}/trimgalore/{name.split('.')[0]}_trimmed.fq.gz"
             for name in sample_id[1]
         ],
     )
@@ -208,7 +208,7 @@ def distribute_tasks():
         task_groups[prefix].append(file)
 
     # Distribute tasks
-    tasks = list(task_groups.items())[:2]
+    tasks = list(task_groups.items())[:3]
 
     print(tasks)
 
