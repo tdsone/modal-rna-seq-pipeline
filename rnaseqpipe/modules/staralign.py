@@ -125,21 +125,10 @@ def run():
     plid: PLID, container_name: str, blob_name: str, dest: Path
     """
 
-    downloader = modal.Function.lookup("rnaseq-downloader", "download_from_azure")
-
-    downloader.remote(
-        plid=plid,
-        container_name="rna-seq-reads",
-        blob_name="DRR023796.fastq",
-        dest_dir=read_dir,
-    )
-
     print("read dir: ", read_dir)
 
     star = STARAlign()
 
-    star.align.remote(
-        plid, [Path(f"/data/{plid}") / read_dir / Path("DRR023796.fastq")]
-    )
+    star.align.remote(plid, ["/data/pl-DRR023782/trimgalore/DRR023782_trimmed.fq.gz"])
 
     pass
