@@ -30,11 +30,27 @@ def trimgalore(plid: str, read_files: List[str]):
 
     vol.reload()
 
+    # Check if trimgalore result files already exist
+    import os
+
+    if os.path.exists(f"/data/{plid}/trimgalore"):
+        files = os.listdir(f"/data/{plid}/trimgalore")
+        print("files:", files)
+        sample_id = str(read_files[0]).split("/")[-1].split(".")[0]
+        print("Sample ID:", sample_id)
+        if (
+            f"{sample_id}_trimmed.fq.gz" in files
+        ) and f"{sample_id}.fastq.gz_trimming_report.txt" in files:
+            print(
+                f"{plid}:trim-galore: Trimgalore results already exist! Returning without action."
+            )
+            return True
+
     trimgalore_cmd = f"""/TrimGalore-0.6.10/trim_galore {' '.join(map(str, read_files))} \
         --cores {int(CPUS)} \
-        --gzip {"--paired" if len(read_files) == 2 else ''} \
-        --fastqc \
-        -o /data/{plid}/trimgalore \
+        {"--paired" if len(read_files) == 2 else ''} \
+        -o /data/{plid}/trimgalore
+        --gzip
         """
 
     print(f"Running TrimGalore: \n\t{trimgalore_cmd}")
@@ -54,9 +70,7 @@ def trimgalore(plid: str, read_files: List[str]):
 def run():
     from pathlib import Path
 
-    plid = PLID("pl-9e233179-57c0-43fb-b514-1f98745ceacb")
+    plid = PLID("pl-DRR023782")
     read_dir = Path("reads")
 
-    trimgalore.remote(
-        plid, [Path(f"/data/{plid}") / read_dir / Path("DRR023796.fastq")]
-    )
+    trimgalore.remote(plid, [f"/data/{plid}/DRR023782.fastq.gz"])
