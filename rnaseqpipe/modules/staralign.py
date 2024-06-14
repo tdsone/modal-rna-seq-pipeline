@@ -54,7 +54,9 @@ class STARAlign:
         import zipfile
 
         with zipfile.ZipFile("genome-index.zip", "r") as zip_ref:
-            zip_ref.extractall("genome-index")
+            zip_ref.extractall("/data/genome-index")
+
+        vol.commit()
 
         pass
 
@@ -70,11 +72,7 @@ class STARAlign:
 
         print("Aligning reads...")
         threads = 8
-        genome_idx_dir = "genome-index/genome-index"
-
-        import os
-
-        print(os.listdir("genome-index"))
+        genome_idx_dir = "/data/genome-index/genome-index"
 
         # Construct the basic command for STAR alignment
         if len(read_files) == 2:  # Paired-end reads
@@ -82,26 +80,18 @@ class STARAlign:
         else:  # Single-end reads
             read_files_cmd = f"{read_files[0]}"
 
-        cmd = [
-            "/STAR-2.7.11b/bin/Linux_x86_64_static/STAR",
-            "--runThreadN",
-            str(threads),
-            "--genomeDir",
-            genome_idx_dir,
-            "--readFilesIn",
-            read_files_cmd,
-            "--outWigType",
-            "wiggle",
-            "--outSAMtype",
-            "BAM",
-            "SortedByCoordinate",
-            "--limitBAMsortRAM",
-            "1174874044",
-        ]
+        cmd = f"""/STAR-2.7.11b/bin/Linux_x86_64_static/STAR --runThreadN {str(threads)} \
+            --genomeDir {genome_idx_dir} \
+            --readFilesIn {read_files_cmd} \
+            --outWigType wiggle \
+            --outSAMtype BAM SortedByCoordinate \
+            --limitBAMsortRAM 1174874044"""
+
+        print(cmd)
 
         try:
             # Execute the command using subprocess
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            result = subprocess.run(cmd, check=True, capture_output=True, shell=True)
 
             vol.commit()
 
