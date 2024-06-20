@@ -22,8 +22,8 @@ trimgalore_img = (
 )
 
 
-@app.function(cpu=CPUS, volumes={"/data": vol}, image=trimgalore_img)
-def trimgalore(plid: str, read_files: List[str]):
+@app.function(cpu=CPUS, volumes={"/data": vol}, image=trimgalore_img, timeout=600)
+def trimgalore(plid: str, read_files: List[str], force_recompute: bool = False):
     print(f"Running TrimGalore! for plid {plid}...")
 
     assert len(read_files) in [1, 2], "TrimGalore!: Invalid number of read files"
@@ -39,8 +39,10 @@ def trimgalore(plid: str, read_files: List[str]):
         sample_id = str(read_files[0]).split("/")[-1].split(".")[0]
         print("Sample ID:", sample_id)
         if (
-            f"{sample_id}_trimmed.fq.gz" in files
-        ) and f"{sample_id}.fastq.gz_trimming_report.txt" in files:
+            (f"{sample_id}_trimmed.fq.gz" in files)
+            and f"{sample_id}.fastq.gz_trimming_report.txt" in files
+            and not force_recompute
+        ):
             print(
                 f"{plid}:trim-galore: Trimgalore results already exist! Returning without action."
             )
@@ -49,8 +51,8 @@ def trimgalore(plid: str, read_files: List[str]):
     trimgalore_cmd = f"""/TrimGalore-0.6.10/trim_galore {' '.join(map(str, read_files))} \
         --cores {int(CPUS)} \
         {"--paired" if len(read_files) == 2 else ''} \
-        -o /data/{plid}/trimgalore
-        --gzip
+        -o /data/{plid}/trimgalore \
+        --dont_gzip
         """
 
     print(f"Running TrimGalore: \n\t{trimgalore_cmd}")
