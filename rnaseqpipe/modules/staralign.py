@@ -25,6 +25,8 @@ aligner_img = (
     volumes={"/data": vol},
     secrets=[Secret.from_name("azure-connect-str")],
     cpu=8.0,
+    container_idle_timeout=30,
+    timeout=60 * 10,
 )
 class STARAlign:
 
@@ -65,18 +67,35 @@ class STARAlign:
         pass
 
     @method()
-    def align(self, plid: PLID, read_files: List[str]):
+    def align(
+        self,
+        plid: PLID,
+        read_files: List[str],
+        is_stranded: bool = True,
+        force_recompute: bool = False,
+    ):
         import subprocess  # Ensure this import is added to the module where this class and method are defined.
+        import os
 
         assert len(read_files) in (1, 2), "Only 1 or 2 read files supported."
 
         print("Aligning reads...")
         threads = 8
         genome_idx_dir = "/data/genome-index/genome-index"
+        result_path = f"/data/{plid}/staralign/"
+
+        os.makedirs(result_path, exist_ok=True)
+
+        if (
+            os.path.exists(f"{result_path}/Aligned.sortedByCoord.out.bam")
+            and not force_recompute
+        ):
+            print(f"Alignment result already exists for {plid}. Skipping alignment.")
+            return True
 
         # Construct the basic command for STAR alignment
         if len(read_files) == 2:  # Paired-end reads
-            read_files_cmd = f"{read_files[0]},{read_files[1]}"
+            read_files_cmd = f"{read_files[0]} {read_files[1]}"
         else:  # Single-end reads
             read_files_cmd = f"{read_files[0]}"
 
@@ -85,7 +104,9 @@ class STARAlign:
             --readFilesIn {read_files_cmd} \
             --outWigType wiggle \
             --outSAMtype BAM SortedByCoordinate \
-            --limitBAMsortRAM 1174874044"""
+            --limitBAMsortRAM 1174874044 \
+            --outFileNamePrefix {result_path}
+            """
 
         print(cmd)
 
@@ -119,6 +140,6 @@ def run():
 
     star = STARAlign()
 
-    star.align.remote(plid, ["/data/pl-DRR023782/trimgalore/DRR023782_trimmed.fq.gz"])
+    star.align.remote(plid, ["/data/pl-DRR023782/trimgalore/DRR023782_trimmed.fq"])
 
     pass
