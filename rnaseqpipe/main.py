@@ -17,11 +17,15 @@ app = App("rna-seq")
 
 pipeline_img = Image.debian_slim().pip_install("azure-storage-blob", "tqdm")
 
+TIMEOUT = 60 * 15
+
 
 @app.function(
     image=pipeline_img,
     volumes={"/data": vol},
     secrets=[Secret.from_name("azure-connect-str")],
+    cpu=1,
+    timeout=TIMEOUT,
 )
 def run_pipeline(sample_id: Tuple[str, List[str]], no_cache: bool = False):
     """
@@ -52,7 +56,7 @@ def run_pipeline(sample_id: Tuple[str, List[str]], no_cache: bool = False):
     # Download the blob(s)
     import os
 
-    print(f"\n{plid}: Downloading files...")
+    print(f"{plid}:main: Downloading files...")
 
     os.makedirs(f"/data/{plid}/reads", exist_ok=True)
     for file in sample_id[1]:
@@ -89,28 +93,32 @@ def run_pipeline(sample_id: Tuple[str, List[str]], no_cache: bool = False):
     TRIM_GALORE = "trimgalore"
 
     fastqc = Function.lookup("rnaseq-fastqc", FASTQC)
-    infer_strandedness = Function.lookup("rnaseq-strandedness", INFER_STRANDEDNESS)
+    # infer_strandedness = Function.lookup("rnaseq-strandedness", INFER_STRANDEDNESS)
     trimgalore = Function.lookup("rnaseq-trim-galore", TRIM_GALORE)
 
     fastqc_handle = fastqc.spawn(
-        plid=plid, read_files=[f"/data/{plid}/reads/{name}" for name in sample_id[1]]
+        plid=plid,
+        read_files=[f"/data/{plid}/reads/{name}" for name in sample_id[1]],
+        force_recompute=False,
     )
 
-    infer_strandedness_handle = infer_strandedness.spawn(
-        plid=plid,
-        read_files=[f"/data/{plid}/reads/{read_file}" for read_file in sample_id[1]],
-        assembly_name="R64-1-1",
-    )
+    # infer_strandedness_handle = infer_strandedness.spawn(
+    #     plid=plid,
+    #     read_files=[f"/data/{plid}/reads/{read_file}" for read_file in sample_id[1]],
+    #     assembly_name="R64-1-1",
+    # )
 
     trimgalore_handle = trimgalore.spawn(
-        plid=plid, read_files=[f"/data/{plid}/reads/{name}" for name in sample_id[1]]
+        plid=plid,
+        read_files=[f"/data/{plid}/reads/{name}" for name in sample_id[1]],
+        force_recompute=False,
     )
 
     import time
 
     results = {
         FASTQC: "running",
-        INFER_STRANDEDNESS: "running",
+        # INFER_STRANDEDNESS: "running",
         TRIM_GALORE: "running",
     }
 
@@ -120,19 +128,19 @@ def run_pipeline(sample_id: Tuple[str, List[str]], no_cache: bool = False):
         )
         try:
             result_fqc = fastqc_handle.get(timeout=10)
-            result_inf_str = infer_strandedness_handle.get(timeout=10)
+            # result_inf_str = infer_strandedness_handle.get(timeout=10)
             result_trimg = trimgalore_handle.get(timeout=10)
 
             if results[FASTQC] == "running" and type(result_fqc) == bool:
                 print(f"{plid}:{FASTQC}: Completed successfully!")
                 results[FASTQC] = "completed"
 
-            if (
-                results[INFER_STRANDEDNESS] == "running"
-                and type(result_inf_str) == bool
-            ):
-                print(f"{plid}:{INFER_STRANDEDNESS}: Completed successfully!")
-                results[INFER_STRANDEDNESS] = "completed"
+            # if (
+            #     results[INFER_STRANDEDNESS] == "running"
+            #     and type(result_inf_str) == bool
+            # ):
+            #     print(f"{plid}:{INFER_STRANDEDNESS}: Completed successfully!")
+            #     results[INFER_STRANDEDNESS] = "completed"
 
             if results[TRIM_GALORE] == "running" and type(result_trimg) == bool:
                 print(f"{plid}:{TRIM_GALORE}: Completed successfully!")
@@ -153,26 +161,31 @@ def run_pipeline(sample_id: Tuple[str, List[str]], no_cache: bool = False):
     align_handle = STARAlign().align.spawn(
         plid=plid,
         read_files=[
-            f"/data/{plid}/trimgalore/{name.split('.')[0]}_trimmed.fq.gz"
+            f"/data/{plid}/trimgalore/{name.split('.')[0]}_trimmed.fq"
             for name in sample_id[1]
         ],
+        force_recompute=False,
     )
 
     while True:
-        result_staralign = align_handle.get(timeout=10)
+        try:
+            result_staralign = align_handle.get(timeout=20)
 
-        if type(result_staralign) == bool:
-            print(f"{plid}: STARAlign: Completed successfully!")
-            break
+            if type(result_staralign) == bool:
+                print(f"{plid}: STARAlign: Completed successfully!")
+                break
+        except TimeoutError as e:
+            print(e)
+        time.sleep(3)
 
-    print("Pipeline completed successfully!")
+    print(f"{plid}: Pipeline completed successfully!")
 
 
 distr_img = Image.debian_slim().pip_install("azure-storage-blob")
 
 
 @app.function(image=distr_img, secrets=[Secret.from_name("azure-connect-str")])
-def distribute_tasks():
+def distribute_tasks(timeout=TIMEOUT):
     import os
     from azure.storage.blob import BlobServiceClient
 
@@ -208,7 +221,7 @@ def distribute_tasks():
         task_groups[prefix].append(file)
 
     # Distribute tasks
-    tasks = list(task_groups.items())[:3]
+    tasks = list(task_groups.items())[:10]
 
     print(tasks)
 
