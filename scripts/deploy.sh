@@ -21,6 +21,13 @@ deploy_module() {
                 echo "Deploying staralign..."
                 modal deploy rnaseqpipe/modules/staralign.py
                 ;;
+            all)
+                echo "Deploying all modules..."
+                modal deploy rnaseqpipe/modules/infer_strandedness/main.py
+                modal deploy rnaseqpipe/modules/trim-galore.py
+                modal deploy rnaseqpipe/modules/fastqc.py
+                modal deploy rnaseqpipe/modules/staralign.py
+                ;;
             *)
                 echo "Unknown module: $module"
                 ;;
