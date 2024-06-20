@@ -1,3 +1,9 @@
+"""
+This files checks the quality of the reads and creates a report using FastQC.
+
+Usage doc for FastQC here: https://www.bioinformatics.babraham.ac.uk/projects/fastqc/INSTALL.txt
+"""
+
 from modal import Image, App
 from typing import List
 
@@ -19,13 +25,14 @@ fastqc_img = (
 @app.function(
     image=fastqc_img,
     volumes={"/data": vol},
+    timeout=60 * 10,
 )
-def fastqc(plid: str, read_files: List[str]):
+def fastqc(plid: str, read_files: List[str], force_recompute: bool = False):
     """Run FastQC on the read files.
 
     Args:
         plid (str): pipeline ID
-        read_files (List[str]): list of read files (2 max for paired reads)
+        read_files (List[str]): list of (un-)zipped read files (2 max for paired reads)
     """
 
     print(f"{plid}:rnaseq-fastqc:fastqc: Running FastQC!")
@@ -36,6 +43,19 @@ def fastqc(plid: str, read_files: List[str]):
 
     result_path = f"/data/{plid}/fastqc/"
 
+    sample_id = None
+    if len(read_files) == 1:
+        sample_id = read_files[0].split("/")[-1].split(".")[0]
+    elif len(read_files) == 2:
+        sample_id = read_files[0].split("/")[-1].split("_")[0]
+    else:
+        raise Exception(f"{plid}:fastqc: Invalid number of read files")
+
+    # Check if the results files can already be skipped
+    if os.path.exists(f"{result_path}/{sample_id}_fastqc.html") and not force_recompute:
+        print(f"{plid}:fastqc: FastQC results already exist! Skipping.")
+        return True
+
     os.makedirs(result_path, exist_ok=True)
 
     read_files_str = " ".join(map(str, read_files))
@@ -43,10 +63,10 @@ def fastqc(plid: str, read_files: List[str]):
     print("read files: ", read_files_str)
     print("result path: ", result_path)
 
-    cmd = ["/FastQC/fastqc", read_files_str, "--outdir", result_path]
+    cmd = f"zcat {read_files_str} | /FastQC/fastqc stdin --outdir {result_path}"
 
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        result = subprocess.run(cmd, shell=True)
 
         vol.commit()
 
@@ -63,7 +83,8 @@ def run():
     from rnaseqpipe.modules.utils import PLID
     from pathlib import Path
 
-    plid = PLID("pl-9e233179-57c0-43fb-b514-1f98745ceacb")
-    read_dir = Path("reads")
+    plid = PLID("pl-DRR023785")
 
-    fastqc.remote(plid, [Path(f"/data/{plid}") / read_dir / Path("DRR023796.fastq")])
+    fastqc.remote(
+        plid, [f"/data/{plid}/reads/DRR023785.fastq.gz"], force_recompute=True
+    )
