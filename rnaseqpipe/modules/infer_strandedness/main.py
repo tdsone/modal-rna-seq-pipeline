@@ -37,8 +37,10 @@ image = (
 )
 
 
-@app.function(image=image, volumes={"/data": vol}, cpu=CPUS)
-def infer_strandedness(plid: PLID, read_files: List[str], assembly_name: str):
+@app.function(image=image, volumes={"/data": vol}, cpu=CPUS, timeout=60 * 10)
+def infer_strandedness(
+    plid: PLID, read_files: List[str], assembly_name: str, force_recompute: bool = False
+):
     """
     Run salmon to infer strandedness
     - can be infered from produced lib_format_counts.json
@@ -54,6 +56,15 @@ def infer_strandedness(plid: PLID, read_files: List[str], assembly_name: str):
 
     # Create the directory for subsampled reads
     subsampled_path = f"/data/{plid}/reads/subsampled"
+    result_path = f"/data/{plid}/strandedness/"
+
+    # Check if lib_format_counts.json already exists. If so infer_strandedness was already run and we can return
+    if os.path.exists(f"{result_path}/lib_format_counts.json") and not force_recompute:
+        print(
+            f"{plid}:infer_strandedness: lib_format_counts.json already exists! Skipping.\nIf you want to recompute, set force_recompute=True."
+        )
+        return True
+
     os.makedirs(subsampled_path, exist_ok=True)
 
     subsampled_files = [
@@ -61,7 +72,7 @@ def infer_strandedness(plid: PLID, read_files: List[str], assembly_name: str):
     ]
 
     subsample_cmd = f"""/fq-0.11.0-x86_64-unknown-linux-gnu/fq subsample {' '.join(read_files)} \
-        --record-count 10000 \
+        --record-count 60000 \
         --r1-dst {subsampled_files[0]} {f'--r2-dst {subsampled_files[1]}' if len(read_files) == 2 else ''}"""
 
     print(f"Subsampling reads: \n\t{subsample_cmd}")
@@ -70,7 +81,6 @@ def infer_strandedness(plid: PLID, read_files: List[str], assembly_name: str):
 
     vol.commit()
 
-    result_path = f"/data/{plid}/strandedness/"
     os.makedirs(result_path, exist_ok=True)
 
     vol.commit()
@@ -123,10 +133,13 @@ def run():
     from rnaseqpipe.modules.utils import PLID
     from pathlib import Path
 
-    plid = PLID("pl-9e233179-57c0-43fb-b514-1f98745ceacb")
+    plid = PLID("pl-SRR22857020")
 
     res = infer_strandedness.remote(
-        plid, [f"/data/{plid}/reads/DRR023796.fastq"], "R64-1-1"
+        plid,
+        read_files=[f"/data/{plid}/reads/SRR22857020.fastq"],
+        assembly_name="R64-1-1",
+        force_recompute=True,
     )
 
     pass
