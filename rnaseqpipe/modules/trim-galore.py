@@ -33,20 +33,30 @@ def trimgalore(plid: str, read_files: List[str], force_recompute: bool = False):
     # Check if trimgalore result files already exist
     import os
 
-    if os.path.exists(f"/data/{plid}/trimgalore"):
+    if os.path.exists(f"/data/{plid}/trimgalore") and not force_recompute:
         files = os.listdir(f"/data/{plid}/trimgalore")
-        print("files:", files)
+        print(f"{plid}:trim-galore: Files in trimgalore directory: {files}")
         sample_id = str(read_files[0]).split("/")[-1].split(".")[0]
-        print("Sample ID:", sample_id)
-        if (
-            (f"{sample_id}_trimmed.fq.gz" in files)
-            and f"{sample_id}.fastq.gz_trimming_report.txt" in files
-            and not force_recompute
-        ):
-            print(
-                f"{plid}:trim-galore: Trimgalore results already exist! Returning without action."
-            )
-            return True
+
+        if len(read_files) == 2:
+            if (
+                (f"{sample_id}_val_1.fq" in files)
+                and f"{sample_id}_val_2.fq" in files
+                and f"{sample_id}_1.fastq.gz_trimming_report.txt" in files
+                and f"{sample_id}_2.fastq.gz_trimming_report.txt" in files
+            ):
+                print(
+                    f"{plid}:trim-galore: Trimgalore results already exist! Returning without action."
+                )
+                return True
+        elif len(read_files) == 1:
+            if (
+                f"{sample_id}_trimmed.fq.gz" in files
+            ) and f"{sample_id}.fastq.gz_trimming_report.txt" in files:
+                print(
+                    f"{plid}:trim-galore: Trimgalore results already exist! Returning without action."
+                )
+                return True
 
     trimgalore_cmd = f"""/TrimGalore-0.6.10/trim_galore {' '.join(map(str, read_files))} \
         --cores {int(CPUS)} \
@@ -72,7 +82,6 @@ def trimgalore(plid: str, read_files: List[str], force_recompute: bool = False):
 def run():
     from pathlib import Path
 
-    plid = PLID("pl-DRR023782")
-    read_dir = Path("reads")
+    plid = PLID("pl-ERR11502248")
 
-    trimgalore.remote(plid, [f"/data/{plid}/DRR023782.fastq.gz"])
+    trimgalore.remote(plid, [f"/data/{plid}/reads"])

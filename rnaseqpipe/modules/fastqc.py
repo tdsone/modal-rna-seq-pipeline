@@ -52,7 +52,7 @@ def fastqc(plid: str, read_files: List[str], force_recompute: bool = False):
         raise Exception(f"{plid}:fastqc: Invalid number of read files")
 
     # Check if the results files can already be skipped
-    if os.path.exists(f"{result_path}/{sample_id}_fastqc.html") and not force_recompute:
+    if os.path.exists(f"{result_path}stdin_fastqc.html") and not force_recompute:
         print(f"{plid}:fastqc: FastQC results already exist! Skipping.")
         return True
 
@@ -86,5 +86,5 @@ def run():
     plid = PLID("pl-DRR023785")
 
     fastqc.remote(
-        plid, [f"/data/{plid}/reads/DRR023785.fastq.gz"], force_recompute=True
+        plid, [f"/data/{plid}/reads/DRR023785.fastq.gz"], force_recompute=False
     )

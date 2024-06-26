@@ -2,7 +2,6 @@ from modal import App, Secret, Image, build, enter, method
 from typing import List
 
 from rnaseqpipe.modules.utils import PLID
-from rnaseqpipe.modules.downloader import download_from_azure
 from rnaseqpipe.config import vol
 
 app = App("rnaseq-staralign")
@@ -24,9 +23,9 @@ aligner_img = (
     image=aligner_img,
     volumes={"/data": vol},
     secrets=[Secret.from_name("azure-connect-str")],
-    cpu=8.0,
-    container_idle_timeout=30,
     timeout=60 * 10,
+    cpu=8.0,
+    container_idle_timeout=5,
 )
 class STARAlign:
 
@@ -71,7 +70,6 @@ class STARAlign:
         self,
         plid: PLID,
         read_files: List[str],
-        is_stranded: bool = True,
         force_recompute: bool = False,
     ):
         import subprocess  # Ensure this import is added to the module where this class and method are defined.
@@ -87,7 +85,8 @@ class STARAlign:
         os.makedirs(result_path, exist_ok=True)
 
         if (
-            os.path.exists(f"{result_path}/Aligned.sortedByCoord.out.bam")
+            os.path.exists(f"{result_path}/Signal.Unique.str1.out.wig")
+            and os.path.exists(f"{result_path}/Signal.Unique.str2.out.wig")
             and not force_recompute
         ):
             print(f"Alignment result already exists for {plid}. Skipping alignment.")
@@ -127,19 +126,21 @@ class STARAlign:
 @app.local_entrypoint()
 def run():
     from pathlib import Path
-    import modal
+    from modal import Cls
 
-    plid = PLID("pl-9e233179-57c0-43fb-b514-1f98745ceacb")
-    read_dir = Path("reads")
+    plid = PLID("pl-ERR11502246")
 
-    """
-    plid: PLID, container_name: str, blob_name: str, dest: Path
-    """
+    AlingerRef = Cls.lookup("rnaseq-staralign", "STARAlign")
 
-    print("read dir: ", read_dir)
+    Aligner = AlingerRef()
 
-    star = STARAlign()
-
-    star.align.remote(plid, ["/data/pl-DRR023782/trimgalore/DRR023782_trimmed.fq"])
+    Aligner.align.remote(
+        plid,
+        [
+            f"/data/{plid}/trimgalore/ERR11502246_1_val_1.fq",
+            f"/data/{plid}/trimgalore/ERR11502246_2_val_2.fq",
+        ],
+        False,
+    )
 
     pass

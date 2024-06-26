@@ -3,6 +3,7 @@ class PLID:
         if id is None:
             self.id = self._generate_pipeline_id()
         else:
+            assert id.startswith("pl-"), "PLID: Invalid pipeline ID"
             self.id = id
 
     def _generate_pipeline_id(self):

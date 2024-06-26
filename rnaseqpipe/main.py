@@ -37,45 +37,51 @@ def run_pipeline(sample_id: Tuple[str, List[str]], no_cache: bool = False):
     # Create a pipeline ID
     plid = f"pl-{sample_id[0]}"
 
+    if len(sample_id[1]) == 1 and sample_id[1][0].endswith("_1.fastq.gz"):
+        raise ValueError(
+            f"{plid}: Paired-end reads must be provided as a list of two files."
+        )
+
     print(f"Running pipeline for {plid} with input {sample_id}...")
 
     import os
     from azure.storage.blob import BlobServiceClient
 
     connect_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-
-    # Get the client for the container
     blob_service_client = BlobServiceClient.from_connection_string(connect_str)
-
-    # Name of the container
     container_name = "rna-seq-reads"
-
-    # Get the client for the container
     container_client = blob_service_client.get_container_client(container_name)
 
-    # Download the blob(s)
-    import os
-
     print(f"{plid}:main: Downloading files...")
-
     os.makedirs(f"/data/{plid}/reads", exist_ok=True)
+
     for file in sample_id[1]:
-        file_empty = False
-        if os.path.exists(f"/data/{plid}/reads/{file}"):
-            file_empty = os.stat(f"/data/{plid}/reads/{file}").st_size == 0
+        local_file_path = f"/data/{plid}/reads/{file}"
+        blob_client = container_client.get_blob_client(file)
 
-        if not os.path.exists(f"/data/{plid}/reads/{file}") or no_cache or file_empty:
-            if os.path.exists(f"/data/{plid}/reads/{file}") and file_empty:
-                os.remove(f"/data/{plid}/reads/{file}")
+        download_required = False
 
-            blob_client = container_client.get_blob_client(file)
-            print(f"{plid}: Downloading {file}...")
-            with open(f"/data/{plid}/reads/{file}", "wb") as f:
-                f.write(blob_client.download_blob().readall())
-                vol.commit()
-
+        if not os.path.exists(local_file_path) or no_cache:
+            download_required = True
         else:
-            print(f"File {file} already exists. Skipping download.")
+            local_file_size = os.path.getsize(local_file_path)
+            blob_properties = blob_client.get_blob_properties()
+            azure_file_size = blob_properties.size
+
+            if local_file_size == 0 or local_file_size != azure_file_size:
+                download_required = True
+                if os.path.exists(local_file_path):
+                    os.remove(local_file_path)
+
+        if download_required:
+            print(f"{plid}: Downloading {file}...")
+            with open(local_file_path, "wb") as f:
+                f.write(blob_client.download_blob().readall())
+            vol.commit()
+        else:
+            print(
+                f"{plid}: File {file} already exists and has the correct size. Skipping download."
+            )
 
     print(f"{plid}: Files downloaded successfully!")
 
@@ -153,30 +159,80 @@ def run_pipeline(sample_id: Tuple[str, List[str]], no_cache: bool = False):
             print(e)
         time.sleep(3)
 
-    # Run the alignment
+    # =========================
+    # STAR: map reads to genome
+    # =========================
+
     STARAlign = Cls.lookup("rnaseq-staralign", "STARAlign")
+
+    if STARAlign is None:
+        raise Exception("STARAlign class not found.")
+
+    trimmed_read_files = []
+    if len(sample_id[1]) == 1:
+        trimmed_read_files.append(
+            f"/data/{plid}/trimgalore/{sample_id[1][0].split('.')[0]}_trimmed.fq"
+        )
+    elif len(sample_id[1]) == 2:
+        trimmed_read_files.append(
+            f"/data/{plid}/trimgalore/{sample_id[1][0].split('.')[0]}_val_1.fq"
+        )
+        trimmed_read_files.append(
+            f"/data/{plid}/trimgalore/{sample_id[1][1].split('.')[0]}_val_2.fq"
+        )
+    else:
+        raise ValueError(f"{plid}: Invalid number of read files.")
+
+    print(trimmed_read_files)
 
     print(f"{plid}: Spawned STARAlign...")
 
-    align_handle = STARAlign().align.spawn(
+    align_result = STARAlign().align.remote(
         plid=plid,
-        read_files=[
-            f"/data/{plid}/trimgalore/{name.split('.')[0]}_trimmed.fq"
-            for name in sample_id[1]
-        ],
+        read_files=trimmed_read_files,
         force_recompute=False,
     )
 
-    while True:
-        try:
-            result_staralign = align_handle.get(timeout=20)
+    # =====================
+    # CONVERT WIG TO BIGWIG
+    # =====================
 
-            if type(result_staralign) == bool:
-                print(f"{plid}: STARAlign: Completed successfully!")
-                break
-        except TimeoutError as e:
-            print(e)
-        time.sleep(3)
+    wigToBigWig = Function.lookup("rnaseq-wigToBigWig", "wigToBigWig")
+    inputs = [
+        (
+            f"/data/{plid}/staralign/Signal.Unique.str1.out.wig",
+            "/data/chrom.sizes",
+            f"/data/{plid}/staralign/Signal.Unique.str1.out.bw",
+            False,
+        ),
+        (
+            f"/data/{plid}/staralign/Signal.Unique.str2.out.wig",
+            "/data/chrom.sizes",
+            f"/data/{plid}/staralign/Signal.Unique.str2.out.bw",
+            False,
+        ),
+    ]
+    result_wigToBigWig = list(wigToBigWig.starmap(inputs))
+
+    # Check if all conversions were successful
+    if all(result_wigToBigWig):
+        print(f"{plid}:wigToBigWig: Completed successfully!")
+    else:
+        print(f"{plid}:wigToBigWig: Failed!")
+        print(result_wigToBigWig)
+
+    # =======================
+    # UPLOAD RESULTS TO AZURE
+    # =======================
+
+    upload_results = Function.lookup("rnaseq-uploader", "upload_results")
+
+    result = upload_results.remote(plid)
+
+    if result:
+        print(f"{plid}: Results uploaded successfully!")
+    else:
+        raise Exception(f"{plid}: Results upload failed!")
 
     print(f"{plid}: Pipeline completed successfully!")
 
@@ -184,8 +240,10 @@ def run_pipeline(sample_id: Tuple[str, List[str]], no_cache: bool = False):
 distr_img = Image.debian_slim().pip_install("azure-storage-blob")
 
 
-@app.function(image=distr_img, secrets=[Secret.from_name("azure-connect-str")])
-def distribute_tasks(timeout=TIMEOUT):
+@app.function(
+    image=distr_img, secrets=[Secret.from_name("azure-connect-str")], timeout=TIMEOUT
+)
+def distribute_tasks():
     import os
     from azure.storage.blob import BlobServiceClient
 
@@ -221,7 +279,7 @@ def distribute_tasks(timeout=TIMEOUT):
         task_groups[prefix].append(file)
 
     # Distribute tasks
-    tasks = list(task_groups.items())[:10]
+    tasks = list(task_groups.items())[:20]
 
     print(tasks)
 
