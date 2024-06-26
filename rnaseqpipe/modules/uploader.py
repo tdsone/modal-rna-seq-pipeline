@@ -11,6 +11,7 @@ uploader_img = Image.debian_slim().pip_install("azure-storage-blob", "tqdm")
 with uploader_img.imports():
     import os
     from azure.storage.blob import BlobServiceClient
+    from azure.core.exceptions import ResourceNotFoundError
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from tqdm import tqdm
 
@@ -46,6 +47,7 @@ def upload_results(plid: str):
 
     def upload_file(file_path, blob_name):
         if should_upload(file_path, blob_name):
+            print("Now uploading file:", blob_name, file_path)
             blob_client = container_client.get_blob_client(blob_name)
             with open(file_path, "rb") as data:
                 blob_client.upload_blob(data, overwrite=True)
@@ -88,6 +90,6 @@ def upload_results(plid: str):
 @app.local_entrypoint()
 def main():
     plid = (
-        "pl-ERR11502248"  # Replace with actual PLID or add as a command-line argument
+        "pl-ERR11502246"  # Replace with actual PLID or add as a command-line argument
     )
     upload_results.remote(plid)
