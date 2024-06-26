@@ -21,12 +21,22 @@ deploy_module() {
                 echo "Deploying staralign..."
                 modal deploy rnaseqpipe/modules/staralign.py
                 ;;
+            bw)
+                echo "Deploying wigToBigWig..."
+                modal deploy rnaseqpipe/modules/wigToBigWig.py
+                ;;
+            up)
+                echo "Deploying uploader..."
+                modal deploy rnaseqpipe/modules/uploader.py
+                ;;
             all)
                 echo "Deploying all modules..."
                 modal deploy rnaseqpipe/modules/infer_strandedness/main.py
                 modal deploy rnaseqpipe/modules/trim-galore.py
                 modal deploy rnaseqpipe/modules/fastqc.py
                 modal deploy rnaseqpipe/modules/staralign.py
+                modal deploy rnaseqpipe/modules/wigToBigWig.py
+                modal deploy rnaseqpipe/modules/uploader.py
                 ;;
             *)
                 echo "Unknown module: $module"
