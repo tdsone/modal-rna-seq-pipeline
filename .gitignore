@@ -11,3 +11,6 @@ pl-DRR023782/
 pl-DRR023791/
 pl-DRR023789/
 pl-DRR023790/
+pl-ERR11502243/trimgalore/ERR11502243_1_val_1.fq
+pl-ERR11502243/trimgalore/ERR11502243_2_val_2.fq
+rnaseqpipe/modules/signalFromBAM.cpp

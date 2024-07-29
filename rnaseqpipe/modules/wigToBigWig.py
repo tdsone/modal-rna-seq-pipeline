@@ -95,7 +95,7 @@ def wigToBigWig(
 @app.local_entrypoint()
 def main():
 
-    plid = "pl-DRR023784"
+    plid = "pl-ERR11502246"
 
     data = f"/data/{plid}/staralign"
 

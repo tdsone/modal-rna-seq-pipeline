@@ -37,7 +37,7 @@ image = (
 )
 
 
-@app.function(image=image, volumes={"/data": vol}, cpu=CPUS, timeout=60 * 10)
+@app.function(image=image, volumes={"/data": vol}, cpu=CPUS, timeout=60 * 100)
 def infer_strandedness(
     plid: PLID, read_files: List[str], assembly_name: str, force_recompute: bool = False
 ):

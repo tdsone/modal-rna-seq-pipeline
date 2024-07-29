@@ -22,7 +22,7 @@ trimgalore_img = (
 )
 
 
-@app.function(cpu=CPUS, volumes={"/data": vol}, image=trimgalore_img, timeout=600)
+@app.function(cpu=CPUS, volumes={"/data": vol}, image=trimgalore_img, timeout=6000)
 def trimgalore(plid: str, read_files: List[str], force_recompute: bool = False):
     print(f"Running TrimGalore! for plid {plid}...")
 
@@ -36,12 +36,14 @@ def trimgalore(plid: str, read_files: List[str], force_recompute: bool = False):
     if os.path.exists(f"/data/{plid}/trimgalore") and not force_recompute:
         files = os.listdir(f"/data/{plid}/trimgalore")
         print(f"{plid}:trim-galore: Files in trimgalore directory: {files}")
-        sample_id = str(read_files[0]).split("/")[-1].split(".")[0]
+        sample_id = plid.split("-")[-1]
+
+        print("Sample id", sample_id)
 
         if len(read_files) == 2:
             if (
-                (f"{sample_id}_val_1.fq" in files)
-                and f"{sample_id}_val_2.fq" in files
+                f"{sample_id}_1_val_1.fq" in files
+                and f"{sample_id}_2_val_2.fq" in files
                 and f"{sample_id}_1.fastq.gz_trimming_report.txt" in files
                 and f"{sample_id}_2.fastq.gz_trimming_report.txt" in files
             ):
@@ -82,6 +84,6 @@ def trimgalore(plid: str, read_files: List[str], force_recompute: bool = False):
 def run():
     from pathlib import Path
 
-    plid = PLID("pl-ERR11502248")
+    plid = PLID("pl-SRR6059709")
 
     trimgalore.remote(plid, [f"/data/{plid}/reads"])

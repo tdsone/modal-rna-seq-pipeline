@@ -25,7 +25,7 @@ fastqc_img = (
 @app.function(
     image=fastqc_img,
     volumes={"/data": vol},
-    timeout=60 * 10,
+    timeout=60 * 100,
 )
 def fastqc(plid: str, read_files: List[str], force_recompute: bool = False):
     """Run FastQC on the read files.

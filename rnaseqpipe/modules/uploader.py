@@ -20,7 +20,7 @@ with uploader_img.imports():
     image=uploader_img,
     volumes={"/data": vol},
     secrets=[Secret.from_name("azure-connect-str")],
-    timeout=1200,
+    timeout=60 * 1000,
 )
 def upload_results(plid: str):
     """Function that uploads all results to Azure Blob Storage.
@@ -84,12 +84,32 @@ def upload_results(plid: str):
             except Exception as exc:
                 print(f"{file_path} generated an exception: {exc}")
 
+    # Final Check that all files were uploaded and have the correct size
+    uploaded_files = container_client.list_blobs()
+    uploaded_files = [
+        blob.name for blob in uploaded_files if blob.name.startswith(plid)
+    ]
+    if len(uploaded_files) != len(files_to_upload):
+        raise Exception(
+            f"Upload failed. {len(uploaded_files)} files were uploaded, but {len(files_to_upload)} were expected."
+        )
+    # Check if files have the correct size
+    for file in uploaded_files:
+        blob_client = container_client.get_blob_client(file)
+        blob_properties = blob_client.get_blob_properties()
+        azure_size = blob_properties.size
+        local_size = os.path.getsize(os.path.join(base_path, file.split(plid + "/")[1]))
+        if local_size != azure_size:
+            raise Exception(
+                f"Upload failed. File {file} has incorrect size. Local size: {local_size}, Azure size: {azure_size}"
+            )
+
     print(f"Upload completed. {uploaded_count} files were uploaded or updated.")
+
+    return True
 
 
 @app.local_entrypoint()
 def main():
-    plid = (
-        "pl-ERR11502246"  # Replace with actual PLID or add as a command-line argument
-    )
+    plid = "pl-SRR7696663"  # Replace with actual PLID or add as a command-line argument
     upload_results.remote(plid)

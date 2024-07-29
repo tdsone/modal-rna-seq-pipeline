@@ -29,6 +29,10 @@ deploy_module() {
                 echo "Deploying uploader..."
                 modal deploy rnaseqpipe/modules/uploader.py
                 ;;
+            main)
+                echo "Deploying main..."
+                modal deploy rnaseqpipe/main.py
+                ;;
             all)
                 echo "Deploying all modules..."
                 modal deploy rnaseqpipe/modules/infer_strandedness/main.py
@@ -37,6 +41,7 @@ deploy_module() {
                 modal deploy rnaseqpipe/modules/staralign.py
                 modal deploy rnaseqpipe/modules/wigToBigWig.py
                 modal deploy rnaseqpipe/modules/uploader.py
+                modal deploy rnaseqpipe/main.py
                 ;;
             *)
                 echo "Unknown module: $module"

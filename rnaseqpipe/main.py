@@ -17,7 +17,7 @@ app = App("rna-seq")
 
 pipeline_img = Image.debian_slim().pip_install("azure-storage-blob", "tqdm")
 
-TIMEOUT = 60 * 15
+TIMEOUT = 60 * 1000
 
 
 @app.function(
@@ -56,6 +56,9 @@ def run_pipeline(sample_id: Tuple[str, List[str]], no_cache: bool = False):
     os.makedirs(f"/data/{plid}/reads", exist_ok=True)
 
     for file in sample_id[1]:
+
+        print(f"{plid}: Downloading {file}...")
+
         local_file_path = f"/data/{plid}/reads/{file}"
         blob_client = container_client.get_blob_client(file)
 
@@ -243,7 +246,7 @@ distr_img = Image.debian_slim().pip_install("azure-storage-blob")
 @app.function(
     image=distr_img, secrets=[Secret.from_name("azure-connect-str")], timeout=TIMEOUT
 )
-def distribute_tasks():
+def distribute_tasks(accesions: List[str]):
     import os
     from azure.storage.blob import BlobServiceClient
 
@@ -261,8 +264,12 @@ def distribute_tasks():
     blob_list = container_client.list_blobs()
     blob_names = []
     for blob in blob_list:
-        if blob.name.endswith(".fastq.gz"):
+        if blob.name.endswith(".fastq.gz") and (
+            len(accesions) == 0 or any([acc in blob.name for acc in accesions])
+        ):
             blob_names.append(blob.name)
+
+    print("Found", len(blob_names))
 
     # Group files by prefix
     task_groups = {}
@@ -278,8 +285,10 @@ def distribute_tasks():
             task_groups[prefix] = []
         task_groups[prefix].append(file)
 
+    print(f"Starting to process {len(task_groups)} tasks...")
+
     # Distribute tasks
-    tasks = list(task_groups.items())[:20]
+    tasks = list(task_groups.items())
 
     print(tasks)
 
@@ -290,5 +299,5 @@ def distribute_tasks():
 
 @app.local_entrypoint()
 def main():
-    distribute_tasks.remote()
+    distribute_tasks.remote(["SRR24605067"])
     pass

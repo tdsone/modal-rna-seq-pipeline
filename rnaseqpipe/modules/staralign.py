@@ -18,13 +18,16 @@ aligner_img = (
     .apt_install("tree")
 )
 
+CPUs = 32.0
+
 
 @app.cls(
     image=aligner_img,
     volumes={"/data": vol},
     secrets=[Secret.from_name("azure-connect-str")],
-    timeout=60 * 10,
-    cpu=8.0,
+    timeout=60 * 1000,
+    cpu=CPUs,
+    memory=20 * 1024,  # 20 GB
     container_idle_timeout=5,
 )
 class STARAlign:
@@ -78,7 +81,7 @@ class STARAlign:
         assert len(read_files) in (1, 2), "Only 1 or 2 read files supported."
 
         print("Aligning reads...")
-        threads = 8
+        threads = str(CPUs).split(".")[0]
         genome_idx_dir = "/data/genome-index/genome-index"
         result_path = f"/data/{plid}/staralign/"
 
@@ -103,7 +106,7 @@ class STARAlign:
             --readFilesIn {read_files_cmd} \
             --outWigType wiggle \
             --outSAMtype BAM SortedByCoordinate \
-            --limitBAMsortRAM 1174874044 \
+            --limitBAMsortRAM 20000000000 \
             --outFileNamePrefix {result_path}
             """
 
